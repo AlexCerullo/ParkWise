@@ -11,3 +11,13 @@ Features (Planned)
 - Historical Analytics: Violation patterns across different neighborhoods and times
 - Real-time Updates: User-reported enforcement activity
 - Mobile Responsive: Optimized for on-the-go parking decisions
+
+
+
+
+
+Permission is hereby granted to use, copy, modify, and distribute this software 
+for personal and educational purposes only. Commercial use is strictly prohibited 
+without written permission from the author.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
