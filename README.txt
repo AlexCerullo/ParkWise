@@ -12,8 +12,7 @@ Features (Planned)
 - Real-time Updates: User-reported enforcement activity
 - Mobile Responsive: Optimized for on-the-go parking decisions
 
-
-
+The app expects a local SQL Server (Express) instance named .\SQLEXPRESS with a database called ParkingTickets.
 
 
 Permission is hereby granted to use, copy, modify, and distribute this software 
