@@ -1,0 +1,8 @@
+*.bak
+*.7z
+*.pkl
+ParkingTicketsDB/
+node_modules/
+**/__pycache__/
+data/node_modules/
+src/__pycache__/

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ParkWise - Smart Parking Risk Analysis</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Leaflet JS & Heat Plugin -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Local Leaflet.heat plugin -->
+    <script src="{{ url_for('static', filename='js/leaflet-heat.js') }}"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    <!-- Chart.js for statistics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-parking"></i>
+                <h1>ParkWise</h1>
+            </div>
+            <p class="tagline">Smart Parking Risk Analysis for Chicago</p>
+        </header>
+
+        <!-- Controls Panel -->
+        <div class="controls-panel">
+            <div class="control-group">
+                <label for="daySelect">
+                    <i class="fas fa-calendar-day"></i> Day of Week
+                </label>
+                <select id="daySelect" class="control-select">
+                    <option value="all" selected>All Days</option>
+                    <option value="Monday">Monday</option>
+                    <option value="Tuesday">Tuesday</option>
+                    <option value="Wednesday">Wednesday</option>
+                    <option value="Thursday">Thursday</option>
+                    <option value="Friday">Friday</option>
+                    <option value="Saturday">Saturday</option>
+                    <option value="Sunday">Sunday</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="hourSelect">
+                    <i class="fas fa-clock"></i> Hour
+                </label>
+                <select id="hourSelect" class="control-select">
+                    <!-- Hours will be populated by JavaScript -->
+                </select>
+            </div>
+
+            <button id="updateBtn" class="update-btn">
+                <i class="fas fa-sync-alt"></i> Update Heat Map
+            </button>
+
+            <button id="currentTimeBtn" class="current-time-btn">
+                <i class="fas fa-location-crosshairs"></i> Use Current Time
+            </button>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Map Container -->
+            <div class="map-container">
+                <div id="map"></div>
+                <div class="map-legend">
+                    <h4>Risk Level</h4>
+                    <div class="legend-items">
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #00ff00;"></span>
+                            <span>Low</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ffff00;"></span>
+                            <span>Medium</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ff0000;"></span>
+                            <span>High</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics Panel -->
+            <div class="stats-panel">
+                <h2><i class="fas fa-chart-line"></i> Parking Statistics</h2>
+                
+                <!-- Quick Stats -->
+                <div class="quick-stats">
+                    <div class="stat-card">
+                        <i class="fas fa-ticket-alt"></i>
+                        <div class="stat-content">
+                            <h3 id="totalViolations">-</h3>
+                            <p>Total Violations</p>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <i class="fas fa-fire"></i>
+                        <div class="stat-content">
+                            <h3 id="hotspotCount">-</h3>
+                            <p>Active Hotspots</p>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <i class="fas fa-dollar-sign"></i>
+                        <div class="stat-content">
+                            <h3 id="avgFine">-</h3>
+                            <p>Average Fine</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top Violations -->
+                <div class="violations-section">
+                    <h3><i class="fas fa-exclamation-triangle"></i> Most Common Violations</h3>
+                    <div id="topViolations" class="violations-list">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Peak Hours Chart -->
+                <div class="chart-section">
+                    <h3><i class="fas fa-clock"></i> Peak Violation Hours</h3>
+                    <canvas id="peakHoursChart"></canvas>
+                </div>
+
+                <!-- Hot Locations -->
+                <div class="locations-section">
+                    <h3><i class="fas fa-map-marker-alt"></i> Highest Risk Locations</h3>
+                    <div id="hotLocations" class="locations-list">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Location Details Modal -->
+        <div id="locationModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2 id="modalLocationName">Location Details</h2>
+                <div id="modalContent">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom JavaScript -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html> 

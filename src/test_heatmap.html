@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Leaflet Heat Map Test</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="static/js/leaflet-heat.js"></script>
+    <style>
+        #map { height: 600px; }
+        body { margin: 0; padding: 20px; }
+        h1 { font-family: Arial, sans-serif; }
+        .info { margin: 10px 0; font-family: Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <h1>Heat Map Plugin Test</h1>
+    <div class="info">This page tests if the heat map plugin is working correctly.</div>
+    <div id="map"></div>
+    
+    <script>
+        // Initialize map
+        var map = L.map('map').setView([41.8781, -87.6298], 12);
+        
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        
+        // Check if heat plugin loaded
+        console.log('L.heatLayer available?', typeof L.heatLayer);
+        
+        // Create test data points around Chicago
+        var testData = [
+            [41.8781, -87.6298, 100],  // Chicago center
+            [41.8981, -87.6298, 80],
+            [41.8581, -87.6298, 90],
+            [41.8781, -87.6498, 70],
+            [41.8781, -87.6098, 85],
+            [41.8681, -87.6398, 95],
+            [41.8881, -87.6198, 75],
+            [41.8481, -87.6398, 60],
+            [41.9081, -87.6298, 88],
+            [41.8381, -87.6298, 92]
+        ];
+        
+        try {
+            // Create heat layer
+            var heat = L.heatLayer(testData, {
+                radius: 25,
+                blur: 15,
+                maxZoom: 17,
+                max: 100,
+                gradient: {
+                    0.0: 'blue',
+                    0.25: 'cyan',
+                    0.5: 'lime',
+                    0.75: 'yellow',
+                    1.0: 'red'
+                }
+            }).addTo(map);
+            
+            console.log('Heat layer created successfully!');
+            document.querySelector('.info').innerHTML += '<br><strong style="color: green;">✓ Heat map loaded successfully!</strong>';
+            
+            // Add more random points
+            setTimeout(function() {
+                var moreData = [];
+                for (var i = 0; i < 50; i++) {
+                    moreData.push([
+                        41.8781 + (Math.random() - 0.5) * 0.2,
+                        -87.6298 + (Math.random() - 0.5) * 0.2,
+                        Math.random() * 100
+                    ]);
+                }
+                heat.setLatLngs(testData.concat(moreData));
+                console.log('Added more points to heat map');
+            }, 2000);
+            
+        } catch (error) {
+            console.error('Error creating heat layer:', error);
+            document.querySelector('.info').innerHTML += '<br><strong style="color: red;">✗ Error: ' + error + '</strong>';
+        }
+    </script>
+</body>
+</html> 
