@@ -1,6 +1,16 @@
 *.bak
 *.7z
 *.pkl
+*.pyd
+*.so
+build/
+dist/
+src/native/build/
+src/native/dist/
+src/native/*.pyd
+src/native/*.so
+src/native/*.obj
+src/nearest_metrics.txt
 ParkingTicketsDB/
 node_modules/
 **/__pycache__/

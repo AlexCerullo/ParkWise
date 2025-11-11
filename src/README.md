@@ -18,6 +18,17 @@ This is the web application for ParkWise - a smart parking risk analysis tool fo
 
 2. Make sure your SQL Server Express is running and the ParkingTickets database is restored.
 
+## Native Acceleration (Optional)
+
+The `/api/nearest-violations` endpoint can offload its distance and ranking work to a C extension for lower latency.
+
+```bash
+cd src/native
+python setup.py build_ext --inplace
+```
+
+This produces `c_nearest.*.pyd` alongside `c_nearest.c`. The Flask app will automatically detect and use it; if it is missing, the pure-Python fallback remains active.
+
 ## Running the Application
 
 There are two ways to run the application:

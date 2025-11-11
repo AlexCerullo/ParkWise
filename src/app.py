@@ -8,12 +8,17 @@ from pathlib import Path
 import math
 import hashlib
 import random
+import time
+import sys
 from collections import OrderedDict
 
 app = Flask(__name__)
 CORS(app)
 
 BASE_DIR = Path(__file__).resolve().parent
+NATIVE_DIR = BASE_DIR / 'native'
+if NATIVE_DIR.exists():
+    sys.path.insert(0, str(NATIVE_DIR))
 DATA_DIR = BASE_DIR / 'data'
 HEATMAP_OVERALL_PATH = DATA_DIR / 'heatmap_overall.pkl'
 HEATMAP_DB_LIMIT = 1000
@@ -25,6 +30,17 @@ HEATMAP_QUERY_RESULT_LIMIT = 2000
 _heatmap_overall_payload_cache = None
 _heatmap_query_cache = OrderedDict()
 _geocode_cache = {}
+_nearest_latency_samples = []
+NEAREST_METRICS_FILE = BASE_DIR / 'nearest_metrics.txt'
+MAX_LATENCY_SAMPLES = 512
+
+try:
+    from c_nearest import filter_rank as c_filter_rank, hot_path_stats as c_hot_path_stats
+    HAS_NATIVE_NEAREST = True
+except ImportError:
+    c_filter_rank = None
+    c_hot_path_stats = None
+    HAS_NATIVE_NEAREST = False
 
 
 
@@ -143,6 +159,34 @@ def get_overall_heatmap_payload():
 
     _heatmap_overall_payload_cache = payload
     return payload
+
+
+def _record_nearest_metrics(latency_seconds, allocation_count, native_allocation_count=None):
+    """Track latency/allocations for nearest-violations endpoint and emit p99 stats."""
+    try:
+        _nearest_latency_samples.append(latency_seconds)
+        if len(_nearest_latency_samples) > MAX_LATENCY_SAMPLES:
+            _nearest_latency_samples.pop(0)
+
+        sorted_samples = sorted(_nearest_latency_samples)
+        percentile_index = max(0, math.ceil(0.99 * len(sorted_samples)) - 1)
+        p99_latency = sorted_samples[percentile_index]
+
+        metrics_lines = [
+            f"timestamp={datetime.utcnow().isoformat()}Z",
+            f"request_count={len(_nearest_latency_samples)}",
+            f"latest_latency_seconds={latency_seconds:.6f}",
+            f"p99_latency_seconds={p99_latency:.6f}",
+            f"allocations_this_request={allocation_count}"
+        ]
+
+        if native_allocation_count is not None:
+            metrics_lines.append(f"native_hot_path_allocations={native_allocation_count}")
+
+        with NEAREST_METRICS_FILE.open('a', encoding='utf-8') as fp:
+            fp.write('\n'.join(metrics_lines) + '\n\n')
+    except Exception as metrics_err:
+        print(f"[WARN] Unable to record nearest metrics: {metrics_err}")
 
 def safe_float(value, default=0.0):
     try:
@@ -417,6 +461,54 @@ def get_location_details(location):
             'message': str(e)
         }), 500
 
+def _python_filter_rank(user_lat, user_lng, radius, limit, candidate_records):
+    """Fallback Python implementation mirroring the native nearest calculation."""
+    if radius <= 0:
+        radius = 0.5
+
+    results = []
+    for lat, lng, violation_count, avg_fine, violation_types, location in candidate_records:
+        distance = calculate_distance(user_lat, user_lng, lat, lng)
+        if distance > radius:
+            continue
+
+        results.append({
+            'location': location,
+            'lat': float(lat),
+            'lng': float(lng),
+            'distance': round(distance, 2),
+            'violationCount': safe_int(violation_count, default=0),
+            'avgFine': round(float(avg_fine), 2),
+            'violationTypes': safe_int(violation_types, default=0)
+        })
+
+    if not results:
+        return []
+
+    counts = [entry['violationCount'] for entry in results]
+    min_count = min(counts)
+    max_count = max(counts) or 1
+
+    for entry in results:
+        if max_count == min_count:
+            percentile = 0.0
+        else:
+            percentile = (entry['violationCount'] - min_count) / max(1, (max_count - min_count))
+
+        if percentile <= 0.33:
+            level = 'Low'
+        elif percentile <= 0.66:
+            level = 'Medium'
+        else:
+            level = 'High'
+
+        entry['riskScore'] = round(percentile, 4)
+        entry['riskLevel'] = level
+
+    results.sort(key=lambda x: (x['riskScore'], x['distance']))
+    return results[:max(limit, 1)]
+
+
 def calculate_distance(lat1, lng1, lat2, lng2):
     """
     Calculate distance in miles between two coordinates using Haversine formula
@@ -468,6 +560,8 @@ def geocode_address():
 @app.route('/api/nearest-violations')
 def get_nearest_violations():
     """Find nearby parking options ranked by relative risk."""
+    request_start = time.perf_counter()
+    allocated_blocks_before = sys.getallocatedblocks() if hasattr(sys, 'getallocatedblocks') else None
     try:
         # Get query parameters
         lat = request.args.get('lat', type=float)
@@ -492,27 +586,17 @@ def get_nearest_violations():
             except Exception:
                 hour_filter = None
 
-        conn = get_db_connection()
-
-        query = """
-        SELECT
-            t.violation_location,
-            COUNT(*) as violation_count,
-            AVG(CAST(v.Cost as FLOAT)) as avg_fine,
-            COUNT(DISTINCT t.violation_code) as violation_types
-        FROM Ticket t
-        JOIN Violation v ON t.violation_code = v.Code
-        WHERE t.violation_location IS NOT NULL
-            AND (? IS NULL OR DATENAME(WEEKDAY, t.issue_date) = ?)
-            AND (? IS NULL OR DATEPART(HOUR, t.issue_date) = ?)
-        GROUP BY t.violation_location
-        """
-        params = [day_filter, day_filter, hour_filter, hour_filter]
-
-        try:
-            df = pd.read_sql(query, conn, params=params)
-        finally:
-            conn.close()
+        if day_filter is None and hour_filter is None:
+            df = get_overall_heatmap_df()
+            if df is None:
+                df = pd.DataFrame(columns=[
+                    'violation_location',
+                    'violation_count',
+                    'avg_fine',
+                    'violation_types'
+                ])
+        else:
+            df = _fetch_heatmap_dataframe(day_filter, hour_filter)
 
         if df.empty:
             return jsonify({
@@ -528,31 +612,22 @@ def get_nearest_violations():
                 }
             })
 
-        results = []
+        candidate_records = []
         for _, row in df.iterrows():
             location_lat, location_lng = geocode_location(row['violation_location'])
             if location_lat is None or location_lng is None:
                 continue
 
-            distance = calculate_distance(lat, lng, location_lat, location_lng)
-            if distance > radius:
-                continue
+            candidate_records.append((
+                float(location_lat),
+                float(location_lng),
+                safe_int(row['violation_count'], default=0),
+                safe_float(row['avg_fine'], default=0.0),
+                safe_int(row['violation_types'], default=0),
+                str(row['violation_location'])
+            ))
 
-            violation_count = safe_int(row['violation_count'], default=0)
-            avg_fine = safe_float(row['avg_fine'], default=0.0)
-            violation_types = safe_int(row['violation_types'], default=0)
-
-            results.append({
-                'location': row['violation_location'],
-                'lat': float(location_lat),
-                'lng': float(location_lng),
-                'distance': round(distance, 2),
-                'violationCount': violation_count,
-                'avgFine': round(float(avg_fine), 2),
-                'violationTypes': violation_types
-            })
-
-        if not results:
+        if not candidate_records:
             return jsonify({
                 'status': 'success',
                 'data': [],
@@ -566,28 +641,20 @@ def get_nearest_violations():
                 }
             })
 
-        counts = [entry['violationCount'] for entry in results]
-        min_count = min(counts)
-        max_count = max(counts) or 1
+        limit = max(limit, 1)
+        if radius is None or radius <= 0:
+            radius = 0.5
 
-        for entry in results:
-            if max_count == min_count:
-                percentile = 0.0
-            else:
-                percentile = (entry['violationCount'] - min_count) / max(1, (max_count - min_count))
-
-            if percentile <= 0.33:
-                level = 'Low'
-            elif percentile <= 0.66:
-                level = 'Medium'
-            else:
-                level = 'High'
-
-            entry['riskScore'] = round(percentile, 4)
-            entry['riskLevel'] = level
-
-        results.sort(key=lambda x: (x['riskScore'], x['distance']))
-        results = results[:max(limit, 1)]
+        use_native = HAS_NATIVE_NEAREST and c_filter_rank is not None
+        results = []
+        if use_native:
+            try:
+                results = c_filter_rank(lat, lng, radius, candidate_records, limit)
+            except Exception as native_err:
+                print(f"[WARN] Native nearest filter failed, falling back to Python: {native_err}")
+                results = _python_filter_rank(lat, lng, radius, limit, candidate_records)
+        else:
+            results = _python_filter_rank(lat, lng, radius, limit, candidate_records)
 
         return jsonify({
             'status': 'success',
@@ -607,6 +674,26 @@ def get_nearest_violations():
             'status': 'error',
             'message': str(e)
         }), 500
+    finally:
+        allocation_delta = 0
+        native_allocation_count = None
+        try:
+            if allocated_blocks_before is not None:
+                allocated_blocks_after = sys.getallocatedblocks()
+                allocation_delta = allocated_blocks_after - allocated_blocks_before
+        except Exception as allocation_err:
+            print(f"[WARN] Unable to calculate allocation delta: {allocation_err}")
+
+        if HAS_NATIVE_NEAREST and c_hot_path_stats is not None:
+            try:
+                native_stats = c_hot_path_stats()
+                if isinstance(native_stats, dict):
+                    native_allocation_count = native_stats.get('allocations_last_call')
+            except Exception as native_stats_err:
+                print(f"[WARN] Unable to read native hot-path stats: {native_stats_err}")
+
+        latency_seconds = time.perf_counter() - request_start
+        _record_nearest_metrics(latency_seconds, allocation_delta, native_allocation_count)
 
 def _deterministic_offsets(location_key, scale):
     digest = hashlib.sha1(location_key.encode('utf-8')).hexdigest()
