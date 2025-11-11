@@ -9,8 +9,7 @@ What it does
 - Surfaces crowd-sourced enforcement reports (planned) to layer in real-time risk.
 - Delivers a responsive web UI optimized for phones, tablets, and dashboards.
 
-Under the hood
-
+'Under the hood' Code Overview
 - Requires a local SQL Server Express instance (.\SQLEXPRESS) with the ParkingTickets database restored.
 - Flask backend serves the API and UI, with pandas handling the heavy query lifting.
 - A C acceleration module handles the nearest-spot geospatial math and risk ranking—zero allocations in the hot path
@@ -20,8 +19,12 @@ Performance setup
 - cd src/native
 - python setup.py build_ext --inplace
 
-That one-time build compiles the c_nearest kernel in-place; the Flask app detects it automatically and falls back to
+Notes
+- That one-time build compiles the c_nearest kernel in-place; the Flask app detects it automatically and falls back to
 pure Python if it’s missing.
+- Restore the ParkingTickets database into your local SQL Server Express instance (.\SQLEXPRESS) so the Flask app can
+query it (sample data given in sample_heatmap_data.csv - only 500 data points).
+- python run.py (in src) will run the program. It can be found in http://localhost:5000
 
 Permission is hereby granted to use, copy, modify, and distribute this software 
 for personal and educational purposes only. Commercial use is strictly prohibited 
